@@ -17,34 +17,18 @@ class Population:
 	population = None
 	bestIndividual = None
 	currentGeneration = 0
-
-	trainingAccuracyOverTime = None
-	testAccuracyOverTime = None
-	trainingWaFOverTime = None
-	testWaFOverTime = None
-	trainingKappaOverTime = None
-	testKappaOverTime = None
-	sizeOverTime = None
-	dimensionsOverTime = None
-
-	generationTime = None
+	fitnessType = None
 
 
-	def __init__(self):
+
+	def __init__(self, fitnessType):
+
 		self.population = []
+		self.fitnessType = fitnessType
 		while len(self.population) < POPULATION_SIZE:
 			self.population.append(Individual())
 		self.bestIndividual = self.population[0]
 
-		self.trainingAccuracyOverTime = []
-		self.testAccuracyOverTime = []
-		self.trainingWaFOverTime = []
-		self.testWaFOverTime = []
-		self.trainingKappaOverTime = []
-		self.testKappaOverTime = []
-		self.sizeOverTime = []
-		self.dimensionsOverTime = []
-		self.generationTimes = []
 
 
 	def stoppingCriteria(self):
@@ -52,9 +36,13 @@ class Population:
 		Returns True if the stopping criteria was reached.
 		'''
 		genLimit = self.currentGeneration >= MAX_GENERATION
-		perfectTraining = self.bestIndividual.getFitness() == 1
+		if self.bestIndividual.getFitnessType() == "Reward Entropy" or self.bestIndividual.getFitnessType() == "Max Reversed Total Entropy":
+			perfectTraining = self.bestIndividual.getFitness() == 2
+		else:
+			perfectTraining = self.bestIndividual.getFitness() == 1
 		
 		return genLimit  or perfectTraining
+
 
 
 	def train(self):
@@ -64,26 +52,10 @@ class Population:
 		if VERBOSE:
 			print("> Running log:")
 
-		while self.currentGeneration < MAX_GENERATION:
-			
-			if not self.stoppingCriteria():
-				t1 = time.time()
-				self.nextGeneration()
-				t2 = time.time()
-				duration = t2-t1
-			else:
-				duration = 0
-
+		while not self.stoppingCriteria():
+			self.nextGeneration()
 			self.currentGeneration += 1
-			self.trainingAccuracyOverTime.append(self.bestIndividual.getTrainingAccuracy())
-			self.testAccuracyOverTime.append(self.bestIndividual.getTestAccuracy())
-			self.trainingWaFOverTime.append(self.bestIndividual.getTrainingWaF())
-			self.testWaFOverTime.append(self.bestIndividual.getTestWaF())
-			self.trainingKappaOverTime.append(self.bestIndividual.getTrainingKappa())
-			self.testKappaOverTime.append(self.bestIndividual.getTestKappa())
-			self.sizeOverTime.append(self.bestIndividual.getSize())
-			self.dimensionsOverTime.append(self.bestIndividual.getNumberOfDimensions())
-			self.generationTimes.append(duration)
+
 
 		if VERBOSE:
 			print()
@@ -121,7 +93,7 @@ class Population:
 		newPopulation = []
 		newPopulation.extend(getElite(self.population))
 		while len(newPopulation) < POPULATION_SIZE:
-			newPopulation.extend(getOffspring(self.population))
+			newPopulation.extend(getOffspring(self.population, self.fitnessType))
 		self.population = newPopulation[:POPULATION_SIZE]
 
 		end = datetime.datetime.now()
@@ -129,7 +101,19 @@ class Population:
 
 		# Debug
 		if VERBOSE and self.currentGeneration%5==0:
-			print("   > Gen #"+str(self.currentGeneration)+":  Tr-Acc: "+ "%.6f" %self.bestIndividual.getTrainingAccuracy()+" // Te-Acc: "+ "%.6f" %self.bestIndividual.getTestAccuracy() + " // Begin: " + begin + " // End: " + end)
+			if self.fitnessType == "Accuracy":
+				print("   > Gen #"+str(self.currentGeneration)+":  Tr-Acc: "+ "%.6f" %self.bestIndividual.getTrainingAccuracy())
+			elif self.fitnessType == "Balanced Accuracy":
+				print("   > Gen #"+str(self.currentGeneration)+":  Tr-Bala: "+ "%.6f" %self.bestIndividual.getTrainingBalancedAccuracy())
+			elif self.fitnessType == "Reward Entropy":
+				print("   > Gen #"+str(self.currentGeneration)+":  Tr-Rew-Ent: "+ "%.6f" %self.bestIndividual.getTrainingRewardEntropy())
+			elif self.fitnessType == "Penalty Entropy":
+				print("   > Gen #"+str(self.currentGeneration)+":  Tr-Pen-Ent: "+ "%.6f" %self.bestIndividual.getTrainingPenaltyEntropy())
+			elif self.fitnessType == "Entropy":
+				print("   > Gen #"+str(self.currentGeneration)+":  Tr-Entropy: "+ "%.6f" %self.bestIndividual.getTrainingEntropy())
+			elif self.fitnessType == "Entropy With Diagonal":
+				print("   > Gen #"+str(self.currentGeneration)+":  Tr-Entropy-With-Diagonal: "+ "%.6f" %self.bestIndividual.getTrainingEntropyWithDiagonal())
+
 
 
 	def predict(self, sample):
@@ -146,6 +130,24 @@ class Population:
 
 	def getTestAccuracyOverTime(self):
 		return self.testAccuracyOverTime
+
+	def getTrainingBalancedAccuracyOverTime(self):
+		return self.trainingBalancedAccuracyOverTime
+
+	def getTestBalancedAccuracyOverTime(self):
+		return self.testBalancedAccuracyOverTime
+
+	def getTrainingRewardEntropyOverTime(self):
+		return self.trainingRewardEntropyOverTime
+
+	def getTrainingPenaltyEntropyOverTime(self):
+		return self.trainingPenaltyEntropyOverTime
+
+	def getTrainingEntropyOverTime(self):
+		return self.trainingEntropyOverTime
+
+	def getTrainingEntropyWithDiagonalOverTime(self):
+		return self.trainingEntropyWithDiagonalOverTime
 
 	def getTrainingWaFOverTime(self):
 		return self.trainingWaFOverTime

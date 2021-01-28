@@ -7,8 +7,14 @@ from .EuclideanDistanceClassifier import EuclideanDistanceClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score
 from sklearn.metrics import cohen_kappa_score
+from sklearn.metrics import balanced_accuracy_score
+from sklearn.metrics import confusion_matrix
 
+from scipy.stats import entropy
 
+from statistics import median
+
+from pandas.core.common import flatten
 
 # 
 # By using this file, you are agreeing to this product's EULA
@@ -30,12 +36,15 @@ class Individual:
 
 	fitness = None
 
-	model_name = ["MahalanobisDistanceClassifier", "EuclideanDistanceClassifier"][0]
+	model_name = ["MahalanobisDistanceClassifier", "EuclideanDistanceClassifier"][1]
 	model = None
 
-	fitnessType = ["Accuracy", "WAF"][0]
 
-	def __init__(self, dim = None):
+	fitnessType = None
+
+
+	def __init__(self, dim = None, fitnessType="Accuracy"):
+		self.fitnessType = fitnessType
 		if dim == None:
 			self.dimensions = [Node(full=True)]
 		else:
@@ -113,7 +122,8 @@ class Individual:
 		'''
 		return len(self.dimensions)
 
-
+	def getFitnessType(self):
+		return self.fitnessType
 
 	def getFitness(self):
 		'''
@@ -126,7 +136,27 @@ class Individual:
 
 			if self.fitnessType == "WAF":
 				waf = self.getTrainingWaF()
-				self.fitness = waf 
+				self.fitness = waf
+			
+			if self.fitnessType == "Balanced Accuracy":
+				bala = self.getTrainingBalancedAccuracy()
+				self.fitness = bala
+			
+			if self.fitnessType == "Reward Entropy":
+				rew_ent = self.getTrainingRewardEntropy()
+				self.fitness = rew_ent
+
+			if self.fitnessType == "Penalty Entropy":
+				pen_ent = self.getTrainingPenaltyEntropy()
+				self.fitness = pen_ent
+
+			if self.fitnessType == "Entropy":
+				min_tot_ent = self.getTrainingEntropy()
+				self.fitness = min_tot_ent
+
+			if self.fitnessType == "Entropy With Diagonal":
+				max_tot_ent = self.getTrainingEntropyWithDiagonal()
+				self.fitness = max_tot_ent
 
 		return self.fitness
 
@@ -176,46 +206,97 @@ class Individual:
 		y = [ str(s[-1]) for s in ds]
 		return accuracy_score(self.testPredictions, y)
 
-	def getTrainingWaF(self):
+	def getTrainingBalancedAccuracy(self):
 		'''
-		Returns the individual's training WAF.
-		'''
+		Returns the individual's training balanced accuracy.
+		'''	
 		self.getTrainingPredictions()
 
 		ds = getTrainingSet()
 		y = [ str(s[-1]) for s in ds]
-		return f1_score(self.trainingPredictions, y, average = "weighted")
+		return balanced_accuracy_score(self.trainingPredictions, y)
 
-	def getTestWaF(self):
+	def getTestBalancedAccuracy(self):
 		'''
-		Returns the individual's test WAF.
+		Returns the individual's test balanced accuracy.
 		'''
 		self.getTestPredictions()
 
 		ds = getTestSet()
 		y = [ str(s[-1]) for s in ds]
-		return f1_score(self.testPredictions, y, average="weighted")
+		return balanced_accuracy_score(self.testPredictions, y)
 
-	def getTrainingKappa(self):
+	def getTrainingPenaltyEntropy(self):
 		'''
-		Returns the individual's training kappa value.
+		Returns the individual's training cm penalty entropy.
 		'''
 		self.getTrainingPredictions()
 
 		ds = getTrainingSet()
 		y = [ str(s[-1]) for s in ds]
-		return cohen_kappa_score(self.trainingPredictions, y)
+		balanced_acc = balanced_accuracy_score(y, self.trainingPredictions)
+		current_cm = confusion_matrix(y, self.trainingPredictions)
+		entropy_list = []
+		if balanced_acc != 1:
+			for i in range(len(current_cm[0])):
+				if sum(current_cm[i]) - current_cm[i][i] != 0:
+					normalized_entropy = entropy(np.concatenate((current_cm[i][:i], current_cm[i][i+1:]), axis = 0)) / entropy([1]*(len(current_cm[0])-1)) 
+					entropy_list.append(normalized_entropy)
+		if entropy_list != []:
+			entropy_median = median(entropy_list)
+		else:
+			entropy_median = 0
+		return balanced_acc - entropy_median
 
-	def getTestKappa(self):
+	def getTrainingRewardEntropy(self):
 		'''
-		Returns the individual's test kappa value.
+		Returns the individual's training cm reward entropy.
 		'''
-		self.getTestPredictions()
+		self.getTrainingPredictions()
 
-		ds = getTestSet()
+		ds = getTrainingSet()
 		y = [ str(s[-1]) for s in ds]
-		return cohen_kappa_score(self.testPredictions, y)
+		balanced_acc = balanced_accuracy_score(y, self.trainingPredictions)
+		current_cm = confusion_matrix(y, self.trainingPredictions)
+		entropy_list = []
+		if balanced_acc != 1:
+			for i in range(len(current_cm[0])):
+				if sum(current_cm[i]) - current_cm[i][i] != 0:
+					normalized_entropy = entropy(np.concatenate((current_cm[i][:i], current_cm[i][i+1:]), axis = 0)) / entropy([1]*(len(current_cm[0])-1)) 
+					entropy_list.append(normalized_entropy)
+		if entropy_list != []:
+			entropy_median = median(entropy_list)
+		else:
+			entropy_median = 0
+		return balanced_acc + entropy_median
 
+	def getTrainingEntropy(self):
+		'''
+		Returns the individual's cm's entropy.
+		'''
+		self.getTrainingPredictions()
+
+		ds = getTrainingSet()
+		y = [ str(s[-1]) for s in ds]
+		cm = confusion_matrix(y, self.trainingPredictions)
+		normalization = entropy([1] * len(list(flatten(cm))))
+		cm_entropy = 1 / (1 + entropy(list(flatten(cm)))/normalization)
+		return cm_entropy
+	
+	def getTrainingEntropyWithDiagonal(self):
+		'''
+		Returns the individual's 1/(1+cm's entropy) + normalized sum of diagonal
+		'''
+		self.getTrainingPredictions()
+
+		ds = getTrainingSet()
+		y = [ str(s[-1]) for s in ds]
+		cm = confusion_matrix(y, self.trainingPredictions)
+		normalization = entropy([1] * len(list(flatten(cm))))
+		diagonal_normalization = sum(list(flatten(cm)))
+		diagonal_sum = sum(cm.diagonal()) / diagonal_normalization
+		cm_entropy = 1 / (1 + entropy(list(flatten(cm)))/normalization) + diagonal_sum
+		return cm_entropy
 
 
 	def calculate(self, sample):
